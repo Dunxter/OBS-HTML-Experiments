@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reverse Datamosh with WebCodecs</title>
+  <style>
+    body { 
+      background: black; 
+      margin: 0; 
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    canvas { 
+      width: 100%; 
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <video id="webcam" autoplay style="display:none"></video>
+  <canvas id="canvas"></canvas>
+
+  <script type="module">
+    // Reverse Datamosh with WebCodecs.
+    // Author: Amagi
+
+    import { Pane } from "https://cdn.jsdelivr.net/npm/tweakpane@4.0.3/dist/tweakpane.min.js";
+
+    const PARAMS = {
+      keyFrame: true,
+      speed: 3,
+    };
+
+    function randomKeyFrameTrigger() {
+      const minDelay = 8000; // 8 seconds in milliseconds
+      const maxDelay = 15000; // 15 seconds in milliseconds
+
+      // Calculate random delay between 8 and 15 seconds
+      const randomDelay = Math.random() * (maxDelay - minDelay) + minDelay;
+
+      setTimeout(() => {
+        PARAMS.keyFrame = true;
+        randomKeyFrameTrigger(); // Schedule the next trigger
+      }, randomDelay);
+    }
+
+    main();
+    randomKeyFrameTrigger(); // Start triggering keyFrame randomly
+
+    function main() {
+      async function startWebcam() {
+        const videoElement = document.getElementById("webcam");
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        videoElement.srcObject = stream;
+
+        // Set canvas dimensions to match the video stream
+        const [track] = stream.getVideoTracks();
+        const settings = track.getSettings();
+        canvas.width = settings.width;
+        canvas.height = settings.height;
+
+        const encoder = new VideoEncoder({
+          output: handleEncodedChunk,
+          error: (err) => console.error("Encoder error:", err),
+        });
+
+        encoder.configure({
+          codec: "vp8",
+          width: settings.width,
+          height: settings.height,
+          bitrate: 1_000_000, // 1Mbps bitrate
+        });
+
+        const decoder = new VideoDecoder({
+          output: handleDecodedFrame,
+          error: (err) => console.error("Decoder error:", err),
+        });
+
+        decoder.configure({
+          codec: "vp8",
+        });
+
+        // Start the processing loop
+        function processFrame() {
+          if (videoElement.readyState >= 2) {
+            // Video is playing
+            const frame = new VideoFrame(videoElement, {
+              timestamp: performance.now() * 1000,
+            });
+            encoder.encode(frame, { keyFrame: PARAMS.keyFrame });
+            PARAMS.keyFrame = false;
+            frame.close();
+          }
+          requestAnimationFrame(processFrame);
+        }
+
+        function handleEncodedChunk(chunk) {
+          if (chunk.type === "key") {
+            decoder.decode(chunk);
+          } else {
+            for (let i = 0; i < PARAMS.speed; i++) {
+              decoder.decode(chunk);
+            }
+          }
+        }
+
+        function handleDecodedFrame(frame) {
+          // Draw the decoded frame onto the canvas
+          ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+          frame.close();
+        }
+
+        processFrame(); // Start encoding and decoding
+      }
+
+      startWebcam();
+    }
+  </script>
+</body>
+</html>
